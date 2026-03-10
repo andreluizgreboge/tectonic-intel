@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SEISMOS // Tectonic Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@700;900&display=swap" crossorigin="anonymous"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="anonymous"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="anonymous"></script>
+<style>
+:root {
+  --bg:      #07090f;
+  --panel:   rgba(10,14,30,0.96);
+  --border:  rgba(255,140,0,0.22);
+  --accent:  #ff8c00;
+  --accent2: #ff3a1a;
+  --accent3: #ffd700;
+  --cool:    #00c4e8;
+  --text:    #eddfc4;
+  --dim:     #8a7a60;
+  --dimmer:  #4a3e2e;
+  --sans:    'Inter', sans-serif;
+  --display: 'Orbitron', sans-serif;
+  --glow-o:  0 0 12px #ff8c0066, 0 0 30px #ff8c0018;
+  --glow-r:  0 0 12px #ff3a1a77, 0 0 30px #ff3a1a18;
+}
+
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+html,body { width:100%; height:100%; background:var(--bg); color:var(--text); font-family:var(--sans); font-size:14px; overflow:hidden; line-height:1.4; }
+
+/* scanlines — subtle */
+body::before {
+  content:''; position:fixed; inset:0; z-index:9999;
+  background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.03) 3px,rgba(0,0,0,0.03) 4px);
+  pointer-events:none;
+}
+
+#app { display:flex; width:100%; height:100vh; position:relative; z-index:1; }
+
+/* ── SIDEBAR ── */
+#sidebar {
+  width:310px; min-width:310px; height:100%;
+  display:flex; flex-direction:column;
+  background:var(--panel);
+  border-right:1px solid var(--border);
+  backdrop-filter:blur(20px);
+  z-index:100; overflow:hidden; position:relative;
+}
+#sidebar::after {
+  content:''; position:absolute; left:0; top:0; bottom:0; width:2px;
+  background:linear-gradient(180deg,transparent,var(--accent),var(--accent2),transparent);
+  animation:borderPulse 4s ease-in-out infinite;
+}
+@keyframes borderPulse { 0%,100%{opacity:.2} 50%{opacity:.8} }
+
+/* HEADER */
+.sidebar-header {
+  padding:14px 16px 12px;
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.logo-eyebrow {
+  font-family:var(--display); font-size:8px; font-weight:700;
+  letter-spacing:5px; color:var(--dim); text-transform:uppercase; margin-bottom:5px;
+}
+.logo-main {
+  font-family:var(--display); font-size:24px; font-weight:900;
+  letter-spacing:3px; color:var(--accent); text-shadow:var(--glow-o); line-height:1;
+}
+.logo-main em { color:var(--accent2); font-style:normal; }
+.logo-tagline { font-size:11px; color:var(--dim); letter-spacing:2px; margin-top:4px; text-transform:uppercase; }
+
+/* ── WORLD MAP PANEL ── */
+#world-panel {
+  margin:10px 14px;
+  background:rgba(0,0,0,0.45);
+  border:1px solid var(--border);
+  border-radius:4px;
+  overflow:hidden;
+  flex-shrink:0;
+}
+.panel-label {
+  font-family:var(--display); font-size:8px; font-weight:700;
+  letter-spacing:4px; color:var(--dim);
+  padding:6px 10px 4px; display:block; text-transform:uppercase;
+  border-bottom:1px solid rgba(255,140,0,0.08);
+}
+#world-svg { width:100%; height:110px; display:block; }
+
+/* ── MAGNITUDE GAUGE ── */
+#mag-gauge {
+  margin:0 14px 8px;
+  padding:10px 14px;
+  background:rgba(0,0,0,0.35);
+  border:1px solid var(--border);
+  border-radius:4px;
+  flex-shrink:0;
+  position:relative; overflow:hidden;
+}
+#mag-gauge::before {
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(135deg,rgba(255,140,0,0.05) 0%,transparent 50%);
+  pointer-events:none;
+}
+.gauge-label { font-size:9px; letter-spacing:3px; color:var(--dim); text-transform:uppercase; margin-bottom:6px; font-family:var(--display); font-weight:700; }
+.gauge-row   { display:flex; align-items:baseline; gap:10px; }
+.gauge-value {
+  font-family:var(--display); font-size:34px; font-weight:900;
+  color:var(--accent); text-shadow:var(--glow-o);
+  letter-spacing:1px; line-height:1;
+  transition:color .4s, text-shadow .4s;
+}
+.gauge-value.minor  { color:#90e0ef; text-shadow:0 0 12px #90e0ef66; }
+.gauge-value.mod    { color:var(--accent3); text-shadow:0 0 12px #ffd70066; }
+.gauge-value.strong { color:var(--accent); text-shadow:var(--glow-o); }
+.gauge-value.major  { color:var(--accent2); text-shadow:var(--glow-r); animation:qpulse .8s ease-in-out infinite; }
+.gauge-value.great  { color:#cc1100; text-shadow:var(--glow-r); animation:qpulse .4s ease-in-out infinite; }
+@keyframes qpulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+.gauge-info { display:flex; flex-direction:column; gap:2px; }
+.gauge-class  { font-size:13px; font-weight:600; color:var(--dim); letter-spacing:1px; }
+.gauge-richter { font-family:var(--display); font-size:9px; color:var(--dimmer); letter-spacing:2px; }
+.gauge-bar-wrap { margin-top:8px; height:4px; background:rgba(255,255,255,0.06); border-radius:2px; overflow:hidden; }
+.gauge-bar { height:100%; width:0%; border-radius:2px; transition:width 1s cubic-bezier(0.4,0,0.2,1), background .5s; }
+.gauge-meta { display:flex; justify-content:space-between; margin-top:6px; font-size:11px; color:var(--dim); }
+
+/* ── STATUS BAR ── */
+#status-bar {
+  margin:0 14px 6px;
+  padding:6px 10px;
+  background:rgba(0,0,0,.35);
+  border:1px solid rgba(255,140,0,.1);
+  border-radius:3px;
+  font-size:12px; color:var(--dim); letter-spacing:.5px;
+  display:flex; align-items:center; gap:8px; flex-shrink:0;
+}
+.status-dot { width:7px; height:7px; border-radius:50%; background:var(--dim); flex-shrink:0; }
+.status-dot.active   { background:var(--cool);   box-shadow:0 0 7px var(--cool);   animation:blink 1.4s ease-in-out infinite; }
+.status-dot.scanning { background:var(--accent3);box-shadow:0 0 7px var(--accent3);animation:blink .3s ease-in-out infinite; }
+.status-dot.error    { background:var(--accent2);box-shadow:0 0 7px var(--accent2); }
+.status-dot.idle     { background:#444; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.1} }
+
+/* ── CONTROLS ── */
+.controls-row { display:flex; gap:6px; margin:0 14px 6px; flex-shrink:0; }
+.ctrl-btn {
+  flex:1; padding:8px 4px;
+  background:transparent;
+  border:1px solid var(--border);
+  color:var(--dim);
+  font-family:var(--display); font-size:9px; font-weight:700;
+  letter-spacing:2px; cursor:pointer; text-transform:uppercase;
+  position:relative; overflow:hidden; transition:all .2s; border-radius:3px;
+}
+.ctrl-btn::before { content:''; position:absolute; top:0; left:-100%; width:100%; height:100%; background:linear-gradient(90deg,transparent,rgba(255,140,0,.1),transparent); transition:left .3s; }
+.ctrl-btn:hover::before { left:100%; }
+.ctrl-btn:hover { border-color:var(--accent); color:var(--accent); box-shadow:var(--glow-o); }
+.ctrl-btn:active { transform:scale(.97); }
+.ctrl-btn:disabled { opacity:.3; cursor:not-allowed; }
+.ctrl-btn.primary { border-color:rgba(255,140,0,.45); color:var(--accent); }
+.ctrl-btn.primary:hover { background:rgba(255,140,0,.07); }
+
+.range-row { display:flex; gap:4px; margin:0 14px 8px; flex-shrink:0; }
+.range-btn {
+  flex:1; padding:6px 2px;
+  background:transparent;
+  border:1px solid rgba(255,140,0,.13);
+  color:var(--dim);
+  font-family:var(--display); font-size:8px; font-weight:700;
+  letter-spacing:1px; cursor:pointer; text-transform:uppercase;
+  transition:all .15s; border-radius:3px;
+}
+.range-btn:hover  { border-color:var(--accent); color:var(--accent); }
+.range-btn.active { background:rgba(255,140,0,.1); border-color:var(--accent); color:var(--accent); box-shadow:var(--glow-o); }
+
+/* ── LEGEND ── */
+.legend {
+  margin:0 14px 8px; padding:7px 10px;
+  background:rgba(0,0,0,.25); border:1px solid rgba(255,140,0,.1);
+  border-radius:3px; flex-shrink:0;
+}
+.legend-title { font-family:var(--display); font-size:8px; font-weight:700; letter-spacing:3px; color:var(--dim); margin-bottom:5px; }
+.legend-items { display:grid; grid-template-columns:1fr 1fr; gap:3px 8px; }
+.legend-item  { display:flex; align-items:center; gap:6px; }
+.legend-dot   { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.legend-text  { font-size:11px; color:var(--dim); }
+
+/* ── SECTION TITLE ── */
+.section-title {
+  font-family:var(--display); font-size:8px; font-weight:700;
+  letter-spacing:4px; color:var(--dim);
+  padding:0 14px 6px; text-transform:uppercase;
+  flex-shrink:0;
+  border-bottom:1px solid rgba(255,140,0,.08); margin-bottom:2px;
+}
+
+/* ── FAULT ZONES LIST ── */
+#locations { flex:1; min-height:0; overflow-y:auto; padding:2px 0 10px; }
+#locations::-webkit-scrollbar { width:3px; }
+#locations::-webkit-scrollbar-thumb { background:rgba(255,140,0,.2); border-radius:2px; }
+
+.loc-item {
+  display:flex; align-items:center; gap:10px;
+  padding:9px 14px; cursor:pointer;
+  transition:background .15s; border-left:2px solid transparent;
+}
+.loc-item:hover  { background:rgba(255,140,0,.05); border-left-color:rgba(255,140,0,.3); }
+.loc-item.active { background:rgba(255,140,0,.09); border-left-color:var(--accent); }
+
+.loc-index { font-family:var(--display); font-size:11px; font-weight:700; color:var(--dimmer); min-width:22px; }
+.loc-item.active .loc-index { color:var(--accent); }
+.loc-info { flex:1; min-width:0; }
+.loc-name { font-size:13px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.loc-item.active .loc-name { color:var(--accent); }
+.loc-sub  { font-size:10px; color:var(--dim); margin-top:1px; letter-spacing:.3px; }
+.loc-count { font-family:var(--display); font-size:11px; font-weight:700; color:var(--dimmer); text-align:right; min-width:28px; }
+.loc-item.active .loc-count { color:var(--accent3); }
+
+/* ── MAP ── */
+#map-wrap { flex:1; position:relative; display:flex; flex-direction:column; }
+
+#top-hud {
+  position:absolute; top:0; left:0; right:0; z-index:500;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:8px 14px;
+  background:linear-gradient(180deg,rgba(7,9,15,.92) 0%,transparent 100%);
+  pointer-events:none;
+}
+.hud-coord { font-size:11px; color:var(--dim); letter-spacing:1px; font-family:var(--display); font-weight:700; }
+.hud-coord span { color:var(--accent); }
+.hud-tag { font-family:var(--display); font-size:8px; letter-spacing:3px; color:rgba(255,140,0,.35); text-transform:uppercase; }
+
+#map { flex:1; width:100%; background:#03050c; cursor:crosshair; }
+
+.corner { position:absolute; width:20px; height:20px; z-index:499; pointer-events:none; }
+.corner.tl { top:38px;    left:4px;  border-top:2px solid rgba(255,140,0,.4); border-left:2px solid rgba(255,140,0,.4); }
+.corner.tr { top:38px;    right:4px; border-top:2px solid rgba(255,140,0,.4); border-right:2px solid rgba(255,140,0,.4); }
+.corner.bl { bottom:22px; left:4px;  border-bottom:2px solid rgba(255,140,0,.4); border-left:2px solid rgba(255,140,0,.4); }
+.corner.br { bottom:22px; right:4px; border-bottom:2px solid rgba(255,140,0,.4); border-right:2px solid rgba(255,140,0,.4); }
+
+.scan-ring {
+  position:absolute; border-radius:50%;
+  border:1px solid rgba(255,140,0,.7);
+  animation:expand-ring 3s ease-out forwards;
+  pointer-events:none; z-index:600;
+  transform:translate(-50%,-50%);
+}
+@keyframes expand-ring { 0%{width:0;height:0;opacity:.9} 100%{width:500px;height:500px;opacity:0} }
+
+#bottom-bar {
+  position:absolute; bottom:0; left:0; right:0; z-index:500;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:5px 14px;
+  background:linear-gradient(0deg,rgba(7,9,15,.95) 0%,transparent 100%);
+  font-size:10px; color:var(--dim); letter-spacing:.5px; pointer-events:none;
+}
+.bottom-stat { display:flex; gap:14px; }
+.bstat span  { color:var(--accent); }
+
+/* LEAFLET */
+.leaflet-control-zoom { border:1px solid var(--border)!important; background:var(--panel)!important; }
+.leaflet-control-zoom a { background:transparent!important; color:var(--accent)!important; border-bottom:1px solid var(--border)!important; font-size:14px!important; line-height:26px!important; }
+.leaflet-control-zoom a:hover { background:rgba(255,140,0,.08)!important; }
+.leaflet-control-attribution { background:rgba(7,9,15,.75)!important; color:#3a3020!important; font-size:8px!important; }
+.leaflet-popup-content-wrapper { background:rgba(10,14,30,.97)!important; border:1px solid var(--border)!important; border-radius:4px!important; color:var(--text)!important; font-family:var(--sans)!important; font-size:13px!important; box-shadow:var(--glow-o)!important; }
+.leaflet-popup-tip { background:rgba(10,14,30,.97)!important; }
+.popup-title { font-family:var(--display); font-size:9px; letter-spacing:2px; color:var(--accent); margin-bottom:7px; }
+.popup-mag   { font-family:var(--display); font-size:24px; font-weight:900; line-height:1; margin-bottom:5px; }
+.popup-row   { margin-top:3px; font-size:12px; color:var(--dim); }
+.popup-row span { color:var(--text); }
+
+/* LOADING */
+#loading-overlay { display:none; position:absolute; inset:0; z-index:700; background:rgba(7,9,15,.6); backdrop-filter:blur(3px); align-items:center; justify-content:center; flex-direction:column; gap:12px; }
+#loading-overlay.active { display:flex; }
+.loader-text { font-family:var(--display); font-size:11px; letter-spacing:5px; color:var(--accent); text-shadow:var(--glow-o); }
+.loader-sub  { font-size:11px; color:var(--dim); letter-spacing:2px; }
+.loader-bar-wrap { width:220px; height:2px; background:rgba(255,140,0,.08); border-radius:1px; overflow:hidden; }
+.loader-bar { height:100%; background:linear-gradient(90deg,var(--accent2),var(--accent),var(--accent3)); animation:loader 1.5s ease-in-out infinite; }
+@keyframes loader { 0%{width:0%;margin-left:0%} 50%{width:60%;margin-left:40%} 100%{width:0%;margin-left:100%} }
+
+#no-data-msg { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:600; text-align:center; background:var(--panel); border:1px solid var(--border); padding:24px 36px; border-radius:4px; pointer-events:none; }
+#no-data-msg.active { display:block; }
+.no-data-icon { font-size:40px; color:var(--dimmer); margin-bottom:8px; }
+.no-data-text { font-size:13px; color:var(--dim); letter-spacing:1px; line-height:1.8; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <aside id="sidebar">
+
+    <div class="sidebar-header">
+      <div class="logo-eyebrow">Live // OSINT</div>
+      <div class="logo-main">TECTONIC<em> INTEL</em></div>
+      <div class="logo-tagline">Global Seismic Monitor</div>
+    </div>
+
+    <!-- WORLD MAP -->
+    <div id="world-panel">
+      <span class="panel-label">Activity by Region</span>
+      <svg id="world-svg" viewBox="0 0 282 110" preserveAspectRatio="xMidYMid meet">
+        <!-- grid -->
+        <line x1="0" y1="55" x2="282" y2="55" stroke="rgba(255,140,0,0.07)" stroke-width="1"/>
+        <line x1="141" y1="0" x2="141" y2="110" stroke="rgba(255,140,0,0.07)" stroke-width="1"/>
+
+        <!-- N. America: lon≈-100, lat≈45 → x≈59, y≈28 -->
+        <circle id="dot-na" cx="59" cy="30" r="5" fill="#333"/>
+        <text x="59" y="48" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#5a4e3a">N.AM</text>
+        <text id="val-na" x="59" y="60" text-anchor="middle" font-family="Orbitron,sans-serif" font-size="9" font-weight="700" fill="#4a3e2e">—</text>
+
+        <!-- S. America: lon≈-60, lat≈-20 → x≈81, y≈68 -->
+        <circle id="dot-sa" cx="81" cy="68" r="5" fill="#333"/>
+        <text x="81" y="86" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#5a4e3a">S.AM</text>
+        <text id="val-sa" x="81" y="98" text-anchor="middle" font-family="Orbitron,sans-serif" font-size="9" font-weight="700" fill="#4a3e2e">—</text>
+
+        <!-- Europe: lon≈15, lat≈50 → x≈141+15/1.2≈153, y≈27 -->
+        <circle id="dot-eu" cx="153" cy="27" r="5" fill="#333"/>
+        <text x="153" y="15" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#5a4e3a">EUR</text>
+        <text id="val-eu" x="153" y="11" text-anchor="middle" font-family="Orbitron,sans-serif" font-size="9" font-weight="700" fill="#4a3e2e">—</text>
+
+        <!-- Africa: lon≈20, lat≈5 → x≈157, y≈52 -->
+        <circle id="dot-af" cx="157" cy="58" r="5" fill="#333"/>
+        <text x="157" y="76" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#5a4e3a">AFR</text>
+        <text id="val-af" x="157" y="88" text-anchor="middle" font-family="Orbitron,sans-serif" font-size="9" font-weight="700" fill="#4a3e2e">—</text>
+
+        <!-- Asia: lon≈100, lat≈35 → x≈224, y≈36 -->
+        <circle id="dot-as" cx="224" cy="34" r="5" fill="#333"/>
+        <text x="224" y="22" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#5a4e3a">ASIA</text>
+        <text id="val-as" x="224" y="14" text-anchor="middle" font-family="Orbitron,sans-serif" font-size="9" font-weight="700" fill="#4a3e2e">—</text>
+
+        <!-- Oceania: lon≈150, lat≈-28 → x≈266, y≈72 -->
+        <circle id="dot-oc" cx="258" cy="72" r="5" fill="#333"/>
+        <text x="258" y="90" text-anchor="middle" font-family="Inter,sans-serif" font-size="9" fill="#5a4e3a">OCE</text>
+        <text id="val-oc" x="258" y="102" text-anchor="middle" font-family="Orbitron,sans-serif" font-size="9" font-weight="700" fill="#4a3e2e">—</text>
+      </svg>
+    </div>
+
+    <!-- GAUGE -->
+    <div id="mag-gauge">
+      <div class="gauge-label">Peak Magnitude — Current Scan</div>
+      <div class="gauge-row">
+        <div class="gauge-value" id="gauge-val">—</div>
+        <div class="gauge-info">
+          <div class="gauge-class" id="gauge-class">Awaiting data</div>
+          <div class="gauge-richter">RICHTER SCALE</div>
+        </div>
+      </div>
+      <div class="gauge-bar-wrap"><div class="gauge-bar" id="gauge-bar"></div></div>
+      <div class="gauge-meta">
+        <span id="gauge-count">Events: —</span>
+        <span id="gauge-avg">Avg: —</span>
+      </div>
+    </div>
+
+    <!-- STATUS -->
+    <div id="status-bar">
+      <div class="status-dot idle" id="status-dot"></div>
+      <span id="status-text">Ready — select a fault zone</span>
+    </div>
+
+    <!-- CONTROLS -->
+    <div class="controls-row">
+      <button class="ctrl-btn primary" id="scan-btn" onclick="triggerScan()">⬡ SCAN</button>
+      <button class="ctrl-btn" onclick="toggleGlobal()">⊕ GLOBAL</button>
+    </div>
+    <div class="range-row">
+      <button class="range-btn active" id="r-hour"  onclick="setRange('hour')">1H</button>
+      <button class="range-btn"        id="r-day"   onclick="setRange('day')">24H</button>
+      <button class="range-btn"        id="r-week"  onclick="setRange('week')">7D</button>
+      <button class="range-btn"        id="r-month" onclick="setRange('month')">30D</button>
+    </div>
+
+    <!-- LEGEND -->
+    <div class="legend">
+      <div class="legend-title">Magnitude Scale</div>
+      <div class="legend-items">
+        <div class="legend-item"><div class="legend-dot" style="background:#00b4d8"></div><div class="legend-text">M &lt; 3 — Minor</div></div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ffd700"></div><div class="legend-text">M 4–5 — Moderate</div></div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ff8c00"></div><div class="legend-text">M 5–6 — Strong</div></div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ff3a1a"></div><div class="legend-text">M 6–7 — Major</div></div>
+        <div class="legend-item"><div class="legend-dot" style="background:#cc1100"></div><div class="legend-text">M ≥ 7 — Great</div></div>
+      </div>
+    </div>
+
+    <!-- FAULT ZONES -->
+    <div class="section-title">Top Fault Zones</div>
+    <div id="locations"></div>
+
+  </aside>
+
+  <!-- MAP -->
+  <div id="map-wrap">
+    <div id="top-hud">
+      <div class="hud-coord">LAT <span id="hud-lat">—</span> &nbsp; LON <span id="hud-lon">—</span></div>
+      <div class="hud-tag">USGS Earthquake API // Live</div>
+      <div class="hud-coord">ZOOM <span id="hud-zoom">—</span></div>
+    </div>
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+    <div id="map"></div>
+
+    <div id="loading-overlay">
+      <div class="loader-text">SCANNING SEISMIC DATA</div>
+      <div class="loader-sub" id="loader-sub">Querying USGS...</div>
+      <div class="loader-bar-wrap"><div class="loader-bar"></div></div>
+    </div>
+
+    <div id="no-data-msg">
+      <div class="no-data-icon">⊘</div>
+      <div class="no-data-text">No seismic events detected<br>Try extending the time range</div>
+    </div>
+
+    <div id="bottom-bar">
+      <div class="bottom-stat">
+        <div class="bstat">Source: <span>USGS Earthquake Catalog</span></div>
+        <div class="bstat">Range: <span id="hud-range">1H</span></div>
+      </div>
+      <div class="bottom-stat">
+        <div class="bstat">Events: <span id="hud-events">—</span></div>
+        <div class="bstat" id="last-scan-time">Updated: —</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+// ─── DATA ─────────────────────────────────────────────────────────────────────
+const LOCATIONS = [
+  { name:"Ring of Fire — Japan",    sub:"Subduction Zone",      lat: 35.68, lon: 139.76, zoom:6, radius:500 },
+  { name:"San Andreas Fault",       sub:"Strike-Slip Fault",    lat: 37.00, lon:-121.00, zoom:8, radius:300 },
+  { name:"Sumatra — Indonesia",     sub:"Subduction Zone",      lat: -3.00, lon: 102.00, zoom:6, radius:600 },
+  { name:"Anatolian Fault, Turkey", sub:"Transform Fault",      lat: 38.50, lon:  38.00, zoom:7, radius:400 },
+  { name:"Aleutian Arc — Alaska",   sub:"Subduction Zone",      lat: 52.00, lon:-175.00, zoom:6, radius:600 },
+];
+
+const USGS_BASE = 'https://earthquake.usgs.gov/fdsnws/event/1/query';
+const RANGES = {
+  hour:  { label:'1H',  minutes:60    },
+  day:   { label:'24H', minutes:1440  },
+  week:  { label:'7D',  minutes:10080 },
+  month: { label:'30D', minutes:43200 },
+};
+
+let map, markersLayer, activeLocIdx=-1, isScanning=false;
+let currentRange = 'hour', globalMode = false;
+
+// ─── MAP ──────────────────────────────────────────────────────────────────────
+function initMap() {
+  map = L.map('map', { center:[20,10], zoom:3, zoomControl:true, attributionControl:true, fadeAnimation:false, zoomAnimation:false });
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { attribution:'ESRI | USGS Earthquake Catalog', maxZoom:19, crossOrigin:'anonymous' }
+  ).addTo(map);
+  markersLayer = L.layerGroup().addTo(map);
+  map.on('moveend zoomend', () => updateHUD(map.getCenter()));
+  updateHUD(map.getCenter());
+  renderLocations();
+}
+
+function updateHUD(c) {
+  document.getElementById('hud-lat').textContent  = c.lat.toFixed(4);
+  document.getElementById('hud-lon').textContent  = c.lng.toFixed(4);
+  document.getElementById('hud-zoom').textContent = map.getZoom();
+}
+
+// ─── SIDEBAR ──────────────────────────────────────────────────────────────────
+function renderLocations() {
+  document.getElementById('locations').innerHTML = LOCATIONS.map((loc, i) => `
+    <div class="loc-item" id="loc-${i}" onclick="selectLocation(${i})">
+      <div class="loc-index">${String(i+1).padStart(2,'0')}</div>
+      <div class="loc-info">
+        <div class="loc-name">${loc.name}</div>
+        <div class="loc-sub">${loc.sub}</div>
+      </div>
+      <div class="loc-count" id="cnt-${i}">—</div>
+    </div>`).join('');
+}
+
+function selectLocation(i) {
+  if (activeLocIdx !== -1) document.getElementById(`loc-${activeLocIdx}`)?.classList.remove('active');
+  activeLocIdx = i;
+  globalMode = false;
+  document.getElementById(`loc-${i}`)?.classList.add('active');
+  const loc = LOCATIONS[i];
+  map.setView([loc.lat, loc.lon], loc.zoom, { animate:false });
+  updateHUD({ lat:loc.lat, lng:loc.lon });
+  setTimeout(triggerScan, 80);
+}
+
+// ─── CONTROLS ────────────────────────────────────────────────────────────────
+function setRange(r) {
+  currentRange = r;
+  document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`r-${r}`).classList.add('active');
+  document.getElementById('hud-range').textContent = RANGES[r].label;
+  if (activeLocIdx !== -1 || globalMode) triggerScan();
+}
+
+function toggleGlobal() {
+  globalMode = true;
+  if (activeLocIdx !== -1) document.getElementById(`loc-${activeLocIdx}`)?.classList.remove('active');
+  activeLocIdx = -1;
+  map.setView([20,10], 3, { animate:false });
+  triggerScan();
+}
+
+function triggerScan() {
+  if (isScanning) return;
+  spawnScanRing();
+  if (globalMode) {
+    fetchEarthquakes(null);
+  } else if (activeLocIdx !== -1) {
+    fetchEarthquakes(LOCATIONS[activeLocIdx]);
+  } else {
+    const c = map.getCenter();
+    fetchEarthquakes({ lat:c.lat, lon:c.lng, radius:500 });
+  }
+}
+
+function spawnScanRing() {
+  const wrap = document.getElementById('map-wrap');
+  const r  = document.getElementById('map').getBoundingClientRect();
+  const wr = wrap.getBoundingClientRect();
+  const ring = document.createElement('div');
+  ring.className  = 'scan-ring';
+  ring.style.left = (r.left - wr.left + r.width  / 2) + 'px';
+  ring.style.top  = (r.top  - wr.top  + r.height / 2) + 'px';
+  wrap.appendChild(ring);
+  setTimeout(() => ring.remove(), 3100);
+}
+
+// ─── FETCH ────────────────────────────────────────────────────────────────────
+async function fetchEarthquakes(loc) {
+  isScanning = true;
+  setStatus('scanning', 'Querying USGS catalog...');
+  document.getElementById('scan-btn').disabled = true;
+  document.getElementById('loading-overlay').classList.add('active');
+  document.getElementById('no-data-msg').classList.remove('active');
+  markersLayer.clearLayers();
+
+  const end   = new Date();
+  const start = new Date(end - RANGES[currentRange].minutes * 60 * 1000);
+
+  let url = `${USGS_BASE}?format=geojson`
+          + `&starttime=${start.toISOString()}`
+          + `&endtime=${end.toISOString()}`
+          + `&minmagnitude=1.0`
+          + `&orderby=magnitude`;
+
+  if (loc) {
+    url += `&latitude=${loc.lat.toFixed(4)}&longitude=${loc.lon.toFixed(4)}&maxradiuskm=${loc.radius||500}&limit=500`;
+    document.getElementById('loader-sub').textContent = `Radius: ${loc.radius||500} km`;
+  } else {
+    url += `&limit=1000`;
+    document.getElementById('loader-sub').textContent = 'Global scan';
+  }
+
+  try {
+    const resp = await fetch(url, { cache:'no-cache' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const geojson = await resp.json();
+    finalizeScan(geojson.features || []);
+  } catch(err) {
+    console.error('[SEISMOS]', err.message);
+    setStatus('error', 'USGS connection failed');
+    finalizeScan([]);
+  }
+}
+
+// ─── PROCESS ──────────────────────────────────────────────────────────────────
+function finalizeScan(features) {
+  isScanning = false;
+  document.getElementById('scan-btn').disabled = false;
+  document.getElementById('loading-overlay').classList.remove('active');
+  document.getElementById('last-scan-time').textContent =
+    'Updated: ' + new Date().toLocaleTimeString('en-GB', { hour12:false });
+
+  document.getElementById('hud-events').textContent = features.length;
+
+  if (features.length === 0) {
+    setStatus('error', 'No events in range');
+    document.getElementById('no-data-msg').classList.add('active');
+    setGauge(null, 0, 0);
+    return;
+  }
+
+  document.getElementById('no-data-msg').classList.remove('active');
+
+  const mags   = features.map(f => f.properties.mag).filter(m => m != null);
+  const maxMag = Math.max(...mags);
+  const avgMag = mags.reduce((a,b)=>a+b,0) / mags.length;
+
+  setGauge(maxMag, features.length, avgMag);
+  setStatus('active', `${features.length} event${features.length!==1?'s':''} detected`);
+  if (activeLocIdx !== -1) document.getElementById(`cnt-${activeLocIdx}`).textContent = features.length;
+
+  updateWorldMap(features);
+
+  features.forEach(f => {
+    const coords = f.geometry?.coordinates;
+    if (!coords || coords.length < 2) return;
+    const [lon, lat, depth] = coords;
+    const mag   = f.properties.mag || 0;
+    const name  = f.properties.place || 'Unknown';
+    const time  = f.properties.time ? new Date(f.properties.time).toLocaleString('en-GB') : '—';
+    const color = magColor(mag);
+    const rad   = magRadius(mag);
+
+    if (mag >= 5.0) {
+      L.circleMarker([lat, lon], {
+        radius:rad*2.2, fillColor:'transparent', color, fillOpacity:0, opacity:.25, weight:1, interactive:false
+      }).addTo(markersLayer);
+    }
+
+    L.circleMarker([lat, lon], {
+      radius:rad, fillColor:color, color:mag>=6?color:'rgba(0,0,0,0.3)',
+      fillOpacity:mag>=5?.85:.65, opacity:.9, weight:mag>=5?1.5:.7,
+    }).bindPopup(`
+      <div class="popup-title">SEISMIC EVENT</div>
+      <div class="popup-mag" style="color:${color};text-shadow:0 0 10px ${color}77">M ${mag.toFixed(1)}</div>
+      <div class="popup-row"><span>${name}</span></div>
+      <div class="popup-row">Depth: <span>${(depth||0).toFixed(1)} km</span></div>
+      <div class="popup-row">Time: <span>${time}</span></div>
+      <div class="popup-row">Class: <span>${magClass(mag)}</span></div>
+      ${f.properties.tsunami?`<div class="popup-row" style="color:#ff3a1a;margin-top:4px">⚠ Tsunami warning issued</div>`:''}
+    `, { maxWidth:230 }).addTo(markersLayer);
+  });
+}
+
+// ─── WORLD MAP ────────────────────────────────────────────────────────────────
+function updateWorldMap(features) {
+  const buckets = { na:[], sa:[], eu:[], af:[], as:[], oc:[] };
+  features.forEach(f => {
+    const m = f.properties.mag; if (m == null) return;
+    const [lon, lat] = f.geometry.coordinates;
+    const b = getContinent(lat, lon);
+    if (b) buckets[b].push(m);
+  });
+  Object.entries(buckets).forEach(([key, mags]) => {
+    const dot = document.getElementById('dot-'+key);
+    const val = document.getElementById('val-'+key);
+    if (!dot||!val) return;
+    if (!mags.length) {
+      dot.setAttribute('fill','#333'); dot.setAttribute('r','4');
+      dot.setAttribute('style',''); val.textContent='—'; val.setAttribute('fill','#4a3e2e'); return;
+    }
+    const max = Math.max(...mags);
+    const color = magColor(max);
+    const r = Math.min(4 + max * 1.2, 12);
+    dot.setAttribute('fill', color);
+    dot.setAttribute('r', r.toFixed(1));
+    dot.setAttribute('style', `filter:drop-shadow(0 0 ${Math.round(r/2)}px ${color})`);
+    val.textContent = max.toFixed(1);
+    val.setAttribute('fill', color);
+  });
+}
+
+function getContinent(lat, lon) {
+  if (lat>15  && lat<75  && lon>-170 && lon<-50)  return 'na';
+  if (lat>-60 && lat<15  && lon>-82  && lon<-34)  return 'sa';
+  if (lat>32  && lat<72  && lon>-25  && lon<45)   return 'eu';
+  if (lat>-38 && lat<38  && lon>-18  && lon<52)   return 'af';
+  if (lat>-50 && lat<0   && lon>110  && lon<180)  return 'oc';
+  if (lat>-12 && lat<55  && lon>45   && lon<150)  return 'as';
+  if (lat>0   && lat<25  && lon>95   && lon<155)  return 'as';
+  return 'as';
+}
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+function magColor(m) {
+  if (m < 2.0) return '#00b4d8';
+  if (m < 3.0) return '#48cae4';
+  if (m < 4.0) return '#90e0ef';
+  if (m < 5.0) return '#ffd700';
+  if (m < 6.0) return '#ff8c00';
+  if (m < 7.0) return '#ff3a1a';
+  return '#cc1100';
+}
+function magRadius(m) { return Math.min(Math.max(Math.pow(2, m*.55)*.9, 3), 36); }
+function magClass(m) {
+  if (m<2) return 'Micro'; if (m<3) return 'Minor'; if (m<4) return 'Light';
+  if (m<5) return 'Moderate'; if (m<6) return 'Strong'; if (m<7) return 'Major';
+  return 'Great';
+}
+
+function setGauge(maxMag, count, avgMag) {
+  const valEl=document.getElementById('gauge-val'), barEl=document.getElementById('gauge-bar');
+  const clsEl=document.getElementById('gauge-class'), cntEl=document.getElementById('gauge-count'), avgEl=document.getElementById('gauge-avg');
+  if (maxMag===null) {
+    valEl.textContent='—'; valEl.className='gauge-value'; barEl.style.width='0%';
+    clsEl.textContent='Awaiting data'; cntEl.textContent='Events: —'; avgEl.textContent='Avg: —'; return;
+  }
+  valEl.textContent=maxMag.toFixed(1);
+  cntEl.textContent=`Events: ${count}`;
+  avgEl.textContent=`Avg: ${avgMag.toFixed(2)}`;
+  clsEl.textContent=magClass(maxMag);
+  valEl.className='gauge-value';
+  const cls=maxMag<3?'minor':maxMag<5?'mod':maxMag<6?'strong':maxMag<7?'major':'great';
+  valEl.classList.add(cls);
+  const color=magColor(maxMag);
+  barEl.style.background=color; barEl.style.boxShadow=`0 0 8px ${color}66`;
+  barEl.style.width=Math.min((maxMag/9)*100,100)+'%';
+}
+
+function setStatus(type, msg) {
+  document.getElementById('status-dot').className='status-dot '+type;
+  document.getElementById('status-text').textContent=msg;
+}
+
+// ─── BOOT ─────────────────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  initMap();
+  setTimeout(() => { globalMode=true; triggerScan(); }, 600);
+});
+</script>
+</body>
+</html>
