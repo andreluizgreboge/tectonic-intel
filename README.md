@@ -4,13 +4,7 @@ A high-fidelity, real-time geological monitoring dashboard built for **OSINT (Op
 
 ---
 
-## 🚀 Live Demo
 
-Access the operational terminal directly in your browser:
-
-[![Play on itch.io](https://img.shields.io/badge/Play%20on-itch.io-FA5C5C?style=for-the-badge&logo=itchdotio&logoColor=white)](https://alga93.itch.io/tectonic-intel)
-
----
 
 ## 📡 Live Intelligence
 The terminal filters global tectonic noise to deliver a tactical view of the planet’s most volatile fault zones.
